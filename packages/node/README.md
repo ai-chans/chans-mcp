@@ -1,20 +1,27 @@
 # Chans MCP
 
-Native Node.js stdio bridge to Chans's hosted Streamable HTTP MCP service.
-Requires Node.js 22+ and npm.
+Paste this into your MCP client configuration. Replace `<your-api-key>` with a key
+from Chans **Developer settings → API keys**, then reload your client.
 
-```sh
-npx -y @ai-chans/mcp
+```json
+{
+  "mcpServers": {
+    "chans": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@ai-chans/mcp"
+      ],
+      "env": {
+        "CHANS_API_KEY": "<your-api-key>"
+      }
+    }
+  }
+}
 ```
 
-Set `CHANS_API_KEY` in your MCP client's environment. The default endpoint is
-`https://api.chans.ai/mcp/`; set `CHANS_MCP_URL` to override it. Remote endpoints
-require HTTPS. HTTP is supported only for loopback development.
+If you already have an `mcpServers` section, add the `chans` entry inside it.
 
-`npx -y @ai-chans/mcp doctor` authenticates and lists tools without executing them.
-Diagnostics go to stderr; stdout is reserved for MCP messages. Interrupted tool
-calls are never automatically replayed: check their status before retrying.
+Requires Node.js 22+ with npm.
 
-This connects to the hosted service; it does not run the Chans backend locally.
-See https://github.com/ai-chans/chans-mcp for client configuration, development,
-release instructions and support.
+[Source and support](https://github.com/ai-chans/chans-mcp)
