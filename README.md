@@ -9,8 +9,7 @@ npx -y @ai-chans/mcp
 uvx chans-mcp
 ```
 
-These commands require a published release. Until the first release is published,
-use the local development commands below. Node.js 22+ is required for npm; Python
+Version `0.1.0` is published on npm and PyPI. Node.js 22+ is required for npm; Python
 3.12+ and uv are required for the Python package. Neither launcher needs the other
 runtime. This bridge requires connectivity to Chans; it does not install the backend.
 

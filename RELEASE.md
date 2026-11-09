@@ -1,8 +1,8 @@
 # Releasing Chans MCP
 
 The packages are `@ai-chans/mcp` on npm and `chans-mcp` on PyPI. All source work uses
-`main`; releases use immutable `vX.Y.Z` tags. Neither registry has been bootstrapped
-by merely creating this repository.
+`main`; releases use immutable `vX.Y.Z` tags. Version `0.1.0` is published on both
+registries. The one-time setup below documents how to recreate the registry trust.
 
 ## One-time registry setup
 
