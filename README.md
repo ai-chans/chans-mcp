@@ -1,66 +1,134 @@
 # Chans MCP
 
-Connect an MCP client that uses stdio to the hosted Chans MCP service.
-Choose either native launcher:
+Connect Chans to your MCP client in three steps: choose a launcher, create an API
+key, and paste the configuration below. No repository clone or global package
+installation is needed.
+
+## 1. Choose a launcher
+
+**Use npx if you already have Node.js.** Choose uvx if you prefer Python. You only
+need one of these options.
+
+| Launcher | Requirements | Package |
+|---|---|---|
+| **npx** | [Node.js](https://nodejs.org/en/download) 22+ with npm | [@ai-chans/mcp](https://www.npmjs.com/package/@ai-chans/mcp) |
+| **uvx** | [uv](https://docs.astral.sh/uv/getting-started/installation/) and Python 3.12+ | [chans-mcp](https://pypi.org/project/chans-mcp/) |
+
+Check that your chosen launcher works. This downloads the package and prints its
+version; no API key is needed yet.
+
+**Node.js / npx**
 
 ```sh
-npx -y @ai-chans/mcp
-# or
-uvx chans-mcp
+npx -y @ai-chans/mcp --version
 ```
 
-Version `0.1.0` is published on npm and PyPI. Node.js 22+ is required for npm; Python
-3.12+ and uv are required for the Python package. Neither launcher needs the other
-runtime. This bridge requires connectivity to Chans; it does not install the backend.
+**Python / uvx**
 
-## Configure your MCP client
+```sh
+uvx chans-mcp --version
+```
 
-Create a scoped Chans API key in your workspace's developer settings. Give it only
-the scopes required by the operations you want to make available. Store it through
-your client's secret mechanism when available; keep configuration files private.
+## 2. Create a Chans API key
+
+In your Chans workspace, open **Developer settings → API keys** and create a key
+with the scopes you want your MCP client to use. Copy the key for the next step.
+
+## 3. Add Chans to your MCP client
+
+Open your client's MCP server configuration and add **one** of the following
+entries. If you already have an `mcpServers` object, add `chans` inside it rather
+than replacing your existing servers. The exact configuration location depends on
+your client.
+
+Replace `<your-api-key>` with your Chans API key. Use your client's secret storage
+when available, and keep files containing the key private.
+
+**Node.js / npx**
 
 ```json
 {
   "mcpServers": {
     "chans": {
       "command": "npx",
-      "args": ["-y", "@ai-chans/mcp@0.1.0"],
-      "env": { "CHANS_API_KEY": "<your-api-key>" }
+      "args": ["-y", "@ai-chans/mcp"],
+      "env": {
+        "CHANS_API_KEY": "<your-api-key>"
+      }
     }
   }
 }
 ```
 
-For Python, use `"command": "uvx"` and `"args": ["chans-mcp==0.1.0"]`.
-Make sure your MCP client can find `npx` or `uvx` in its PATH. On Windows, a client
-may require `npx.cmd` or the executable's absolute path.
+**Python / uvx**
 
-| Environment variable | Behavior |
-|---|---|
-| `CHANS_API_KEY` | Required raw API key; sent as a Bearer credential |
-| `CHANS_MCP_URL` | Optional; defaults to `https://api.chans.ai/mcp/` |
-
-Remote endpoints require HTTPS. Plain HTTP is accepted only for `localhost`,
-`127.0.0.1` and `::1`. URL credentials, query strings and fragments are rejected.
-Redirects cannot send credentials to a different origin. Existing MCP clients with
-native Streamable HTTP support can connect directly to the hosted endpoint.
-
-## Check the connection
-
-With `CHANS_API_KEY` set in your environment:
-
-```sh
-npx -y @ai-chans/mcp doctor
-# or
-uvx chans-mcp doctor
+```json
+{
+  "mcpServers": {
+    "chans": {
+      "command": "uvx",
+      "args": ["chans-mcp"],
+      "env": {
+        "CHANS_API_KEY": "<your-api-key>"
+      }
+    }
+  }
+}
 ```
 
-`doctor` authenticates and counts authorized tools across discovery pages. It never
-calls a tool. `--help` and `--version` work without credentials.
+Save the configuration, then reload or restart your MCP client. It starts Chans
+automatically and shows the tools available to your API key.
 
-Serving writes only MCP JSON-RPC to stdout; diagnostics use stderr. Interrupted
-operations may already have completed. The bridge never automatically replays a
-failed tool POST: inspect the operation's status before retrying.
+Chans connects to `https://api.chans.ai/mcp/`. It requires internet access and uses
+the hosted Chans service; it does not install the backend on your computer.
+
+## Check your connection
+
+If your client cannot connect, run `doctor` in a terminal. It checks authentication
+and tool discovery without executing a tool.
+
+**macOS / Linux**
+
+```sh
+export CHANS_API_KEY="<your-api-key>"
+npx -y @ai-chans/mcp doctor
+# If you chose Python, use: uvx chans-mcp doctor
+```
+
+**Windows PowerShell**
+
+```powershell
+$env:CHANS_API_KEY = "<your-api-key>"
+npx -y @ai-chans/mcp doctor
+# If you chose Python, use: uvx chans-mcp doctor
+```
+
+A successful check reports how many authorized tools are available.
+
+| Problem | What to check |
+|---|---|
+| `npx` or `uvx` cannot be found | Install the required runtime, then restart your MCP client. You may need to configure the launcher's absolute path. |
+| Windows cannot launch `npx` | Try `npx.cmd` or the executable's absolute path in the client configuration. |
+| Authentication fails | Check that `CHANS_API_KEY` contains the raw key, without a `Bearer ` prefix. |
+| Expected tools are missing | Check the API key's scopes. |
+| Running the launcher appears to wait | Without `doctor` or `--version`, it waits for MCP messages. Your MCP client normally starts and manages this process. |
+
+## Optional settings
+
+| Setting | How to use it |
+|---|---|
+| Another Chans deployment | Add `CHANS_MCP_URL` to the configuration's `env` object with its HTTPS MCP endpoint. |
+| Pin version 0.1.0 with npx | Change the package argument to `@ai-chans/mcp@0.1.0`. |
+| Pin version 0.1.0 with uvx | Change the package argument to `chans-mcp==0.1.0`. |
+
+Remote endpoints require HTTPS. HTTP is accepted only for loopback development
+(`localhost`, `127.0.0.1` or `::1`). URL credentials, query strings and fragments are
+rejected; redirects cannot send credentials to a different origin.
+
+If your client supports Streamable HTTP directly, it can connect to the hosted MCP
+endpoint without this launcher. Interrupted tool calls may already have completed;
+check their status before retrying. The bridge never automatically replays a failed
+tool POST.
 
 ## Architecture
 
