@@ -1,0 +1,9 @@
+{
+  "name": "chans-mcp-repository",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "npm --prefix packages/node run check",
+    "test": "uv run --project packages/python python -m unittest discover -s tests -v"
+  }
+}

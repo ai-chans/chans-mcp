@@ -1,0 +1,8 @@
+{
+  "name": "contract_probe",
+  "description": "Synthetic offline test; never invokes a Chans business operation.",
+  "inputSchema": { "type": "object", "properties": { "value": { "type": "string" } } },
+  "outputSchema": { "type": "object", "properties": { "ok": { "type": "boolean" } } },
+  "annotations": { "readOnlyHint": true, "destructiveHint": false },
+  "_meta": { "fixture": "preserve-this" }
+}

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling==1.30.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "chans-mcp"
+version = "0.1.0"
+description = "Chans MCP stdio bridge to the hosted Streamable HTTP service"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = ["mcp==2.3.0", "anyio>=4.16,<5", "httpx2>=2.16,<3"]
+
+[dependency-groups]
+dev = ["ruff==0.17.4"]
+
+[project.scripts]
+chans-mcp = "chans_mcp.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/ai-chans/chans-mcp"
+Issues = "https://github.com/ai-chans/chans-mcp/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/chans_mcp"]

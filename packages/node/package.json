@@ -1,0 +1,33 @@
+{
+  "name": "@ai-chans/mcp",
+  "version": "0.1.0",
+  "description": "Chans MCP stdio bridge to the hosted Streamable HTTP service",
+  "type": "module",
+  "bin": {
+    "chans-mcp": "src/cli.js"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "check": "node --check src/cli.js && node --check src/bridge.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ai-chans/chans-mcp.git",
+    "directory": "packages/node"
+  },
+  "homepage": "https://github.com/ai-chans/chans-mcp#readme",
+  "bugs": "https://github.com/ai-chans/chans-mcp/issues",
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "Apache-2.0"
+}
