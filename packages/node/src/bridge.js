@@ -2,7 +2,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 
-export const VERSION = '0.1.2';
+export const VERSION = '0.1.3';
 
 export function configuration(env = process.env) {
   const key = env.CHANS_API_KEY?.trim();
@@ -19,12 +19,25 @@ export function configuration(env = process.env) {
       url.username || url.password || url.search || url.hash) {
     throw new Error('CHANS_MCP_URL requires HTTPS (HTTP is allowed on loopback), without credentials, query or fragment.');
   }
-  return { url, key };
+  const headers = { Authorization: `Bearer ${key}` };
+  const accessId = env.CF_ACCESS_CLIENT_ID?.trim();
+  const accessSecret = env.CF_ACCESS_CLIENT_SECRET?.trim();
+  if (accessId || accessSecret) {
+    if (!accessId || !accessSecret) {
+      throw new Error('CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET must both be set.');
+    }
+    if (!/^[\x21-\x7e]+$/.test(accessId) || !/^[\x21-\x7e]+$/.test(accessSecret)) {
+      throw new Error('CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET must be valid header values.');
+    }
+    headers['CF-Access-Client-Id'] = accessId;
+    headers['CF-Access-Client-Secret'] = accessSecret;
+  }
+  return { url, headers };
 }
 
-function transport({ url, key }) {
+function transport({ url, headers }) {
   return new StreamableHTTPClientTransport(url, {
-    requestInit: { headers: { Authorization: `Bearer ${key}` }, redirect: 'error' },
+    requestInit: { headers, redirect: 'error' },
     // SSE reconnection can resume streams; never replay a failed tool POST.
     reconnectionOptions: { maxRetries: 0, initialReconnectionDelay: 1000,
       maxReconnectionDelay: 1000, reconnectionDelayGrowFactor: 1 },

@@ -43,19 +43,31 @@ def configuration(environ=None):
         raise ValueError(
             "CHANS_MCP_URL requires HTTPS (HTTP is allowed on loopback), without credentials, query or fragment."
         )
-    return url, key
+    headers = {"Authorization": f"Bearer {key}"}
+    access_id = env.get("CF_ACCESS_CLIENT_ID", "").strip()
+    access_secret = env.get("CF_ACCESS_CLIENT_SECRET", "").strip()
+    if access_id or access_secret:
+        if not access_id or not access_secret:
+            raise ValueError("CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET must both be set.")
+        if any(not 33 <= ord(character) <= 126 for character in access_id + access_secret):
+            raise ValueError(
+                "CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET must be valid header values."
+            )
+        headers["CF-Access-Client-Id"] = access_id
+        headers["CF-Access-Client-Secret"] = access_secret
+    return url, headers
 
 
-def http_client(key):
+def http_client(headers):
     return httpx2.AsyncClient(
-        headers={"Authorization": f"Bearer {key}"},
+        headers=headers,
         timeout=httpx2.Timeout(300, connect=15),
         follow_redirects=False,
     )
 
 
-async def doctor(url, key):
-    async with http_client(key) as http:
+async def doctor(url, headers):
+    async with http_client(headers) as http:
         async with Client(streamable_http_client(url, http_client=http), mode="legacy") as client:
             count = 0
             cursor = None
@@ -71,7 +83,7 @@ async def doctor(url, key):
             )
 
 
-async def bridge(url, key):
+async def bridge(url, headers):
     # No local Server/Client session: the host and remote server negotiate directly.
     # SDK transports own framing, HTTP sessions, SSE and cancellation delivery.
     version = None
@@ -81,7 +93,7 @@ async def bridge(url, key):
         for number in (signal.SIGINT, signal.SIGTERM):
             old_handlers[number] = signal.signal(number, lambda *_: tasks.cancel_scope.cancel())
         try:
-            async with http_client(key) as http:
+            async with http_client(headers) as http:
                 async with streamable_http_client(url, http_client=http) as (
                     remote_read,
                     remote_write,
@@ -126,7 +138,7 @@ async def bridge(url, key):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Chans MCP stdio bridge. Set CHANS_API_KEY; optionally CHANS_MCP_URL."
+        description="Chans MCP stdio bridge. Set CHANS_API_KEY; optionally CHANS_MCP_URL and CF_ACCESS_CLIENT_ID/CF_ACCESS_CLIENT_SECRET."
     )
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("command", nargs="?", choices=["doctor"])

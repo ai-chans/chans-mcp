@@ -18,6 +18,20 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+CF_ENV = {
+    "CF_ACCESS_CLIENT_ID": "fixture-access-id.access",
+    "CF_ACCESS_CLIENT_SECRET": "fixture-access-secret",
+}
+CF_HEADERS = {
+    "CF-Access-Client-Id": CF_ENV["CF_ACCESS_CLIENT_ID"],
+    "CF-Access-Client-Secret": CF_ENV["CF_ACCESS_CLIENT_SECRET"],
+}
+
+
+def clean_environment():
+    return {name: value for name, value in os.environ.items() if name not in CF_ENV}
+
+
 ROOT = Path(__file__).resolve().parents[1]
 TOOL = json.loads((ROOT / "contracts/tool.json").read_text())
 COMMANDS = {
@@ -38,6 +52,9 @@ class Endpoint(ThreadingHTTPServer):
     def __init__(self):
         super().__init__(("127.0.0.1", 0), Handler)
         self.messages = []
+        self.http_requests = []
+        self.access_headers = {}
+        self.received = threading.Event()
         self.cancelled = threading.Event()
         self.blocked = threading.Event()
         self.redirect_target = None
@@ -69,15 +86,29 @@ class Handler(BaseHTTPRequestHandler):
         with contextlib.suppress(BrokenPipeError, ConnectionResetError):
             self.wfile.write(raw)
 
+    def check_access(self):
+        self.server.http_requests.append((self.command, dict(self.headers)))
+        if any(
+            self.headers.get(name) != value for name, value in self.server.access_headers.items()
+        ):
+            self.reply(403, {"detail": "Access denied"})
+            return False
+        return True
+
     def do_GET(self):
-        self.reply(405)
+        if self.check_access():
+            self.reply(405)
 
     def do_DELETE(self):
-        self.reply(204)
+        if self.check_access():
+            self.reply(204)
 
     def do_POST(self):
         message = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         self.server.messages.append((message, dict(self.headers)))
+        self.server.received.set()
+        if not self.check_access():
+            return
         if self.server.redirect_target:
             self.reply(307, extra={"Location": self.server.redirect_target})
             return
@@ -173,8 +204,9 @@ def endpoint():
 
 
 class Peer:
-    def __init__(self, command, url, key="fixture-key"):
-        env = {**os.environ, "CHANS_API_KEY": key, "CHANS_MCP_URL": url}
+    def __init__(self, command, url, key="fixture-key", extra_env=None):
+        env = {**clean_environment(), "CHANS_API_KEY": key, "CHANS_MCP_URL": url}
+        env.update(extra_env or {})
         self.process = subprocess.Popen(
             command,
             cwd=ROOT,
@@ -252,15 +284,17 @@ class Peer:
 
 
 class Contract(unittest.TestCase):
-    def each(self, fn):
+    def each(self, fn, extra_env=None):
         for name, command in COMMANDS.items():
             with self.subTest(implementation=name), endpoint() as (server, url):
-                peer = Peer(command, url)
+                peer = Peer(command, url, extra_env=extra_env)
                 try:
                     fn(peer, server)
                 finally:
                     peer.stop()
                 self.assertNotIn("fixture-key", "".join(peer.output + peer.errors))
+                for value in CF_ENV.values():
+                    self.assertNotIn(value, "".join(peer.output + peer.errors))
 
     def test_discovery_call_fidelity_and_protocol_headers(self):
         def check(peer, server):
@@ -340,6 +374,7 @@ class Contract(unittest.TestCase):
     def test_cross_origin_redirect_does_not_receive_key(self):
         def check(peer, server):
             with endpoint() as (target, target_url):
+                server.access_headers = CF_HEADERS
                 server.redirect_target = target_url
                 peer.send(
                     {
@@ -352,11 +387,82 @@ class Contract(unittest.TestCase):
                         },
                     }
                 )
+                self.assertTrue(server.received.wait(5))
                 time.sleep(0.4)
                 peer.stop()
                 self.assertEqual(target.messages, [])
+                for header, value in CF_HEADERS.items():
+                    self.assertEqual(server.http_requests[0][1].get(header), value)
 
-        self.each(check)
+        self.each(check, extra_env=CF_ENV)
+
+    def test_cloudflare_headers_on_bridge_and_doctor(self):
+        def check(peer, server):
+            server.access_headers = CF_HEADERS
+            server.stateful = True
+            peer.initialize()
+            peer.send(
+                {"id": "access-list", "method": "tools/list", "params": {"cursor": "page-two"}}
+            )
+            self.assertEqual(peer.receive()["result"]["tools"], [TOOL])
+            peer.send(
+                {"id": "access-call", "method": "tools/call", "params": {"name": "contract_probe"}}
+            )
+            self.assertTrue(peer.receive()["result"]["structuredContent"]["ok"])
+            for _, headers in server.http_requests:
+                for name, value in CF_HEADERS.items():
+                    self.assertEqual(headers.get(name), value)
+
+        self.each(check, extra_env=CF_ENV)
+        for name, command in COMMANDS.items():
+            with self.subTest(implementation=name, command="doctor"), endpoint() as (server, url):
+                server.access_headers = CF_HEADERS
+                result = subprocess.run(
+                    command + ["doctor"],
+                    cwd=ROOT,
+                    capture_output=True,
+                    text=True,
+                    env={
+                        **clean_environment(),
+                        **CF_ENV,
+                        "CHANS_API_KEY": "fixture-key",
+                        "CHANS_MCP_URL": url,
+                    },
+                    timeout=10,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("1 authorized tools", result.stderr)
+                for _, headers in server.http_requests:
+                    for header, value in CF_HEADERS.items():
+                        self.assertEqual(headers.get(header), value)
+                for value in CF_ENV.values():
+                    self.assertNotIn(value, result.stdout + result.stderr)
+
+    def test_cloudflare_rejects_partial_and_invalid_credentials(self):
+        cases = [
+            {"CF_ACCESS_CLIENT_ID": CF_ENV["CF_ACCESS_CLIENT_ID"]},
+            {"CF_ACCESS_CLIENT_SECRET": CF_ENV["CF_ACCESS_CLIENT_SECRET"]},
+            {**CF_ENV, "CF_ACCESS_CLIENT_SECRET": "secret\r\nInjected: value"},
+            {**CF_ENV, "CF_ACCESS_CLIENT_ID": "invalid id"},
+            {**CF_ENV, "CF_ACCESS_CLIENT_SECRET": "invalid-é"},
+        ]
+        for name, command in COMMANDS.items():
+            for index, values in enumerate(cases):
+                with self.subTest(implementation=name, case=index):
+                    result = subprocess.run(
+                        command,
+                        cwd=ROOT,
+                        capture_output=True,
+                        text=True,
+                        env={**clean_environment(), "CHANS_API_KEY": "fixture-key", **values},
+                        timeout=5,
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, "")
+                    self.assertIn("CF_ACCESS_CLIENT_", result.stderr)
+                    for value in values.values():
+                        self.assertNotIn(value, result.stderr)
 
     def test_unknown_method_returns_remote_protocol_error(self):
         def check(peer, _):
@@ -384,7 +490,7 @@ class Contract(unittest.TestCase):
                     capture_output=True,
                     text=True,
                     env={
-                        **os.environ,
+                        **clean_environment(),
                         "CHANS_API_KEY": "fixture-key",
                         "CHANS_MCP_URL": url,
                     },
@@ -409,7 +515,7 @@ class Contract(unittest.TestCase):
                         cwd=ROOT,
                         capture_output=True,
                         text=True,
-                        env={**os.environ, "CHANS_API_KEY": key, "CHANS_MCP_URL": url},
+                        env={**clean_environment(), "CHANS_API_KEY": key, "CHANS_MCP_URL": url},
                         timeout=5,
                     )
                     self.assertNotEqual(result.returncode, 0)
@@ -426,7 +532,7 @@ class Contract(unittest.TestCase):
                     capture_output=True,
                     text=True,
                     env={
-                        **os.environ,
+                        **clean_environment(),
                         "CHANS_API_KEY": "secret-invalid-key",
                         "CHANS_MCP_URL": url,
                     },
@@ -445,7 +551,7 @@ class Contract(unittest.TestCase):
                         cwd=ROOT,
                         capture_output=True,
                         text=True,
-                        env={**os.environ, "CHANS_API_KEY": ""},
+                        env={**clean_environment(), "CHANS_API_KEY": ""},
                         timeout=5,
                     )
                     self.assertEqual(result.returncode, 0, result.stderr)

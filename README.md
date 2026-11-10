@@ -92,6 +92,34 @@ For uvx, change `"command"` to `"uvx"` and `"args"` to `["chans-mcp"]`.
 VS Code uses `servers` instead of `mcpServers`.
 [VS Code configuration reference](https://code.visualstudio.com/docs/agents/reference/mcp-configuration).
 
+## Dev behind Cloudflare Access
+
+With version **0.1.3+**, add the dev endpoint and your Cloudflare service-token
+credentials to `env`:
+
+```json
+{
+  "mcpServers": {
+    "chans-dev": {
+      "command": "npx",
+      "args": ["-y", "@ai-chans/mcp"],
+      "env": {
+        "CHANS_MCP_URL": "https://dev-api.chans.ai/mcp/",
+        "CHANS_API_KEY": "YOUR_DEV_CHANS_API_KEY",
+        "CF_ACCESS_CLIENT_ID": "YOUR_CF_ACCESS_CLIENT_ID",
+        "CF_ACCESS_CLIENT_SECRET": "YOUR_CF_ACCESS_CLIENT_SECRET"
+      }
+    }
+  }
+}
+```
+
+For uvx, use `"command": "uvx"` and `"args": ["chans-mcp"]`.
+Both Cloudflare values are required together. They are sent as `CF-Access-Client-Id`
+and `CF-Access-Client-Secret` headers alongside the Chans API key, including for
+`doctor`. Your Cloudflare Access policy must allow that service token.
+[Cloudflare service-token setup](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/).
+
 ## Other MCP clients
 
 Choose **stdio** as the transport and enter:
