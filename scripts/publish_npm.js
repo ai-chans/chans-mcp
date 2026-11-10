@@ -2,11 +2,12 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
 
 const { name, version } = JSON.parse(readFileSync('packages/node/package.json', 'utf8'));
 const files = readdirSync('dist').filter(file => file.endsWith('.tgz'));
 if (files.length !== 1) throw new Error('Expected exactly one tested npm tarball');
-const file = `dist/${files[0]}`;
+const file = resolve('dist', files[0]);
 const integrity = `sha512-${createHash('sha512').update(readFileSync(file)).digest('base64')}`;
 const url = `https://registry.npmjs.org/${encodeURIComponent(name)}/${version}`;
 const existing = await fetch(url);

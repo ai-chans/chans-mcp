@@ -15,6 +15,11 @@ dist = root / "dist"
 npm = shutil.which("npm")
 uv = shutil.which("uv")
 assert npm and uv
+# Verify npm recognizes the distribution as a local tarball before publication.
+subprocess.run(
+    [npm, "publish", str(tarball), "--dry-run", "--ignore-scripts", "--access", "public"],
+    check=True,
+)
 with tempfile.TemporaryDirectory(prefix="chans-mcp-artifacts-") as folder:
     destination = Path(folder)
     environment = destination / "python"
