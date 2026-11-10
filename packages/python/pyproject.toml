@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "chans-mcp"
-version = "0.1.4"
+version = "0.1.5"
 description = "Chans MCP stdio bridge to the hosted Streamable HTTP service"
 readme = "README.md"
 license = "Apache-2.0"

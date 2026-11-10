@@ -3,7 +3,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 
-export const VERSION = '0.1.4';
+export const VERSION = '0.1.5';
 
 export function configuration(env = process.env, options = {}) {
   let url;

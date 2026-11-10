@@ -19,3 +19,6 @@ Use only `main`; do not add a dev branch. Keep both packages on the same version
 - Update README for user behavior; release instructions live in RELEASE.md. Changes
   here do not deploy Core or frontend. Registry publication needs configured owners
   and trusted publishers; never claim a package is available before verifying it.
+
+- Keep GitHub, npm and PyPI READMEs identical. Lead setup with direct HTTP and
+  client-specific headers configuration; keep npx/uvx as the stdio option.
