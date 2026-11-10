@@ -21,7 +21,20 @@ if (existing.ok) {
 } else {
   throw new Error(`Registry availability check failed (${existing.status}); refusing to guess.`);
 }
-const verified = await fetch(url);
-if (!verified.ok || (await verified.json()).dist.integrity !== integrity) {
-  throw new Error('Published package could not be verified against the tested artifact');
+// npm can accept a release before its public registry has finished processing it.
+// Poll metadata only: never replay the publication while it is processing.
+for (let attempt = 0; attempt < 60; attempt++) {
+  const verified = await fetch(url, { cache: 'no-store' });
+  if (verified.ok) {
+    if ((await verified.json()).dist.integrity !== integrity) {
+      throw new Error('Published package differs from the tested artifact');
+    }
+    console.log(`${name}@${version} verified against the tested artifact.`);
+    break;
+  }
+  if (verified.status !== 404 && verified.status < 500) {
+    throw new Error(`Registry verification failed (${verified.status})`);
+  }
+  if (attempt === 59) throw new Error('npm is still processing the release; retry verification later.');
+  await new Promise(resolve => setTimeout(resolve, 5000));
 }
