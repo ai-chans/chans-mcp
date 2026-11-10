@@ -92,33 +92,70 @@ For uvx, change `"command"` to `"uvx"` and `"args"` to `["chans-mcp"]`.
 VS Code uses `servers` instead of `mcpServers`.
 [VS Code configuration reference](https://code.visualstudio.com/docs/agents/reference/mcp-configuration).
 
-## Dev behind Cloudflare Access
+## Custom headers and dev
 
-With version **0.1.3+**, add the dev endpoint and your Cloudflare service-token
-credentials to `env`:
+### With npx or uvx (stdio)
+
+Use `--header "Name: value"` for each header. With **0.1.4+**, this configuration
+needs no environment variables:
 
 ```json
 {
   "mcpServers": {
     "chans-dev": {
       "command": "npx",
-      "args": ["-y", "@ai-chans/mcp"],
-      "env": {
-        "CHANS_MCP_URL": "https://dev-api.chans.ai/mcp/",
-        "CHANS_API_KEY": "YOUR_DEV_CHANS_API_KEY",
-        "CF_ACCESS_CLIENT_ID": "YOUR_CF_ACCESS_CLIENT_ID",
-        "CF_ACCESS_CLIENT_SECRET": "YOUR_CF_ACCESS_CLIENT_SECRET"
+      "args": [
+        "-y", "@ai-chans/mcp",
+        "--url", "https://dev-api.chans.ai/mcp/",
+        "--header", "Authorization: Bearer YOUR_DEV_CHANS_API_KEY",
+        "--header", "CF-Access-Client-Id: YOUR_CF_CLIENT_ID",
+        "--header", "CF-Access-Client-Secret: YOUR_CF_CLIENT_SECRET",
+        "--header", "X-Custom-Header: YOUR_VALUE"
+      ]
+    }
+  }
+}
+```
+
+For uvx, use `"command": "uvx"` and replace the first two arguments with
+`"chans-mcp"`. The same flags work with `doctor`. `--url` overrides
+`CHANS_MCP_URL`; it defaults to production when neither is set.
+
+A stdio client does not forward a top-level `headers` field to its child process.
+Use the arguments above. `CHANS_API_KEY` remains supported instead of an explicit
+Authorization header; do not configure both. The Cloudflare environment variables
+from 0.1.3 remain supported for existing configurations.
+
+Headers are checked for valid HTTP names and printable ASCII values. Control
+characters (including CR/LF), duplicate names ignoring case, and HTTP/MCP transport
+header overrides are rejected. The limit is 64 headers and 16 KiB in total.
+Credentials are not printed or forwarded across origins. Header values are not
+HTML-escaped or otherwise rewritten; validation protects HTTP framing.
+
+### With an HTTP client
+
+Clients that support remote HTTP servers and custom headers, such as Cursor, can
+connect directly using a `headers` object:
+
+```json
+{
+  "mcpServers": {
+    "chans-dev": {
+      "url": "https://dev-api.chans.ai/mcp/",
+      "headers": {
+        "Authorization": "Bearer YOUR_DEV_CHANS_API_KEY",
+        "CF-Access-Client-Id": "YOUR_CF_CLIENT_ID",
+        "CF-Access-Client-Secret": "YOUR_CF_CLIENT_SECRET",
+        "X-Custom-Header": "YOUR_VALUE"
       }
     }
   }
 }
 ```
 
-For uvx, use `"command": "uvx"` and `"args": ["chans-mcp"]`.
-Both Cloudflare values are required together. They are sent as `CF-Access-Client-Id`
-and `CF-Access-Client-Secret` headers alongside the Chans API key, including for
-`doctor`. Your Cloudflare Access policy must allow that service token.
-[Cloudflare service-token setup](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/).
+This direct connection uses the client's header handling. The wrapper's validation
+applies to its stdio launcher only. Your Cloudflare Access policy must allow the
+service token. [Cloudflare service-token setup](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/).
 
 ## Other MCP clients
 

@@ -1,23 +1,38 @@
 #!/usr/bin/env node
+import { parseArgs } from 'node:util';
 import { bridge, configuration, doctor, VERSION } from './bridge.js';
+import { ConfigurationError } from './headers.js';
 
-const args = process.argv.slice(2);
-if (args.length === 1 && args[0] === '--version') {
-  console.log(VERSION);
-} else if (args.length === 1 && ['--help', '-h'].includes(args[0])) {
-  console.log('Usage: chans-mcp [doctor|--version|--help]\nSet CHANS_API_KEY; optionally CHANS_MCP_URL and CF_ACCESS_CLIENT_ID/CF_ACCESS_CLIENT_SECRET. No arguments starts the stdio bridge.');
-} else if (args.length > 1 || (args.length === 1 && args[0] !== 'doctor')) {
-  console.error('Usage: chans-mcp [doctor|--version|--help]');
+let parsed;
+try {
+  parsed = parseArgs({
+    allowPositionals: true,
+    options: {
+      header: { type: 'string', multiple: true }, url: { type: 'string' },
+      help: { type: 'boolean', short: 'h' }, version: { type: 'boolean' },
+    },
+  });
+  if (parsed.positionals.length > 1 ||
+      (parsed.positionals.length === 1 && parsed.positionals[0] !== 'doctor')) throw new Error();
+} catch {
+  console.error('Usage: chans-mcp [doctor] [--url URL] [--header "Name: value"] [--version|--help]');
   process.exitCode = 2;
-} else {
-  try {
-    const config = configuration();
-    if (args[0] === 'doctor') await doctor(config);
-    else await bridge(config);
-  } catch (error) {
-    // SDK/HTTP errors can contain URLs and headers; never print them verbatim.
-    console.error(error.message.startsWith('CHANS_') || error.message.startsWith('CF_ACCESS_') || error.message.startsWith('Set CHANS_')
-      ? error.message : 'Chans MCP connection failed. Check credentials, endpoint and connectivity. Check operation status before retrying an interrupted tool call.');
-    process.exitCode = 1;
+}
+if (parsed && process.exitCode !== 2) {
+  const { values, positionals } = parsed;
+  if (values.version) console.log(VERSION);
+  else if (values.help) {
+    console.log('Usage: chans-mcp [doctor] [--url URL] [--header "Name: value"]\nRepeat --header for additional HTTP headers. Set CHANS_API_KEY or pass Authorization.');
+  } else {
+    try {
+      const config = configuration(process.env, values);
+      if (positionals[0] === 'doctor') await doctor(config);
+      else await bridge(config);
+    } catch (error) {
+      // Never print raw HTTP/SDK errors or command-line values.
+      console.error(error instanceof ConfigurationError ? error.message :
+        'Chans MCP connection failed. Check credentials, endpoint and connectivity. Check operation status before retrying an interrupted tool call.');
+      process.exitCode = 1;
+    }
   }
 }

@@ -204,11 +204,11 @@ def endpoint():
 
 
 class Peer:
-    def __init__(self, command, url, key="fixture-key", extra_env=None):
+    def __init__(self, command, url, key="fixture-key", extra_env=None, extra_args=()):
         env = {**clean_environment(), "CHANS_API_KEY": key, "CHANS_MCP_URL": url}
         env.update(extra_env or {})
         self.process = subprocess.Popen(
-            command,
+            command + list(extra_args),
             cwd=ROOT,
             env=env,
             stdin=subprocess.PIPE,
@@ -394,7 +394,20 @@ class Contract(unittest.TestCase):
                 for header, value in CF_HEADERS.items():
                     self.assertEqual(server.http_requests[0][1].get(header), value)
 
-        self.each(check, extra_env=CF_ENV)
+        for name, command in COMMANDS.items():
+            with self.subTest(implementation=name), endpoint() as (server, url):
+                args = [
+                    value
+                    for header, value in CF_HEADERS.items()
+                    for value in ("--header", f"{header}: {value}")
+                ]
+                peer = Peer(command, url, extra_args=args)
+                try:
+                    check(peer, server)
+                finally:
+                    peer.stop()
+                for value in CF_ENV.values():
+                    self.assertNotIn(value, "".join(peer.output + peer.errors))
 
     def test_cloudflare_headers_on_bridge_and_doctor(self):
         def check(peer, server):
@@ -438,6 +451,84 @@ class Contract(unittest.TestCase):
                         self.assertEqual(headers.get(header), value)
                 for value in CF_ENV.values():
                     self.assertNotIn(value, result.stdout + result.stderr)
+
+    def test_custom_headers_without_environment_credentials(self):
+        custom = {**CF_HEADERS, "X-Customer-Token": "token:with/colons; and spaces"}
+        args = ["--header", "Authorization: Bearer fixture-key"]
+        for header, value in custom.items():
+            args += ["--header", f"{header}: {value}"]
+        for name, command in COMMANDS.items():
+            with self.subTest(implementation=name), endpoint() as (server, url):
+                server.access_headers = custom
+                peer = Peer(
+                    command, "https://wrong.example/mcp", key="", extra_args=["--url", url, *args]
+                )
+                try:
+                    peer.initialize()
+                    peer.send(
+                        {"id": "custom", "method": "tools/list", "params": {"cursor": "page-two"}}
+                    )
+                    self.assertEqual(peer.receive()["result"]["tools"], [TOOL])
+                finally:
+                    peer.stop()
+                for value in custom.values():
+                    self.assertNotIn(value, "".join(peer.output + peer.errors))
+                result = subprocess.run(
+                    command + ["doctor", "--url", url, *args],
+                    cwd=ROOT,
+                    env={**clean_environment(), "CHANS_API_KEY": ""},
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "")
+                for _, headers in server.http_requests:
+                    headers = {key.lower(): value for key, value in headers.items()}
+                    for header, value in custom.items():
+                        self.assertEqual(headers.get(header.lower()), value)
+                for value in custom.values():
+                    self.assertNotIn(value, result.stderr)
+
+    def test_custom_headers_reject_injection_duplicates_and_transport_overrides(self):
+        cases = [
+            ["X-Test: hidden-secret\nInjected: value"],
+            ["X-Test: hidden-secret\n"],
+            ["X-Test\n: hidden-secret"],
+            ["X-Test: hidden-secret\r\nInjected: value"],
+            ["X-Test: hidden-secret\t"],
+            ["X-Test: hidden-secret-é"],
+            ["Bad Name: hidden-secret"],
+            ["X-Test: one", "x-test: hidden-secret"],
+            ["Authorization: Bearer hidden-secret"],
+            ["Host: hidden-secret"],
+            ["Content-Length: 100"],
+            ["Transfer-Encoding: chunked"],
+            ["Connection: hidden-secret"],
+            ["Accept: hidden-secret"],
+            ["Content-Type: hidden-secret"],
+            ["Mcp-Session-Id: hidden-secret"],
+            ["Mcp-Protocol-Version: hidden-secret"],
+            ["Mcp-Param-Example: hidden-secret"],
+            ["X-Test: " + "a" * 16384],
+            [f"X-Count-{index}: value" for index in range(64)],
+        ]
+        for name, command in COMMANDS.items():
+            for index, headers in enumerate(cases):
+                args = [value for header in headers for value in ("--header", header)]
+                with self.subTest(implementation=name, case=index):
+                    result = subprocess.run(
+                        command + args,
+                        cwd=ROOT,
+                        capture_output=True,
+                        text=True,
+                        env={**clean_environment(), "CHANS_API_KEY": "fixture-key"},
+                        timeout=5,
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, "")
+                    self.assertIn("Headers", result.stderr)
+                    self.assertNotIn("hidden-secret", result.stderr)
 
     def test_cloudflare_rejects_partial_and_invalid_credentials(self):
         cases = [
@@ -541,6 +632,22 @@ class Contract(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(result.stdout, "")
                 self.assertNotIn("secret-invalid-key", result.stderr)
+
+    def test_cli_errors_do_not_echo_header_secrets(self):
+        for name, command in COMMANDS.items():
+            for args in (["--unknown", "hidden-secret"], ["--header"]):
+                with self.subTest(implementation=name, arguments=args[0]):
+                    result = subprocess.run(
+                        command + args,
+                        cwd=ROOT,
+                        capture_output=True,
+                        text=True,
+                        env=clean_environment(),
+                        timeout=5,
+                    )
+                    self.assertEqual(result.returncode, 2)
+                    self.assertEqual(result.stdout, "")
+                    self.assertNotIn("hidden-secret", result.stderr)
 
     def test_help_and_version_without_credentials(self):
         for name, command in COMMANDS.items():

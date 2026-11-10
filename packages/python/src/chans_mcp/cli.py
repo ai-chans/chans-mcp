@@ -15,14 +15,12 @@ from mcp.server.stdio import stdio_server
 from mcp.shared.message import ClientMessageMetadata, SessionMessage
 
 from chans_mcp import __version__
+from chans_mcp.headers import request_headers
 
 
-def configuration(environ=None):
+def configuration(environ=None, *, url=None, extra_headers=()):
     env = os.environ if environ is None else environ
-    key = env.get("CHANS_API_KEY", "").strip()
-    if not key or "\r" in key or "\n" in key:
-        raise ValueError("Set CHANS_API_KEY to a valid Chans API key.")
-    url = env.get("CHANS_MCP_URL", "https://api.chans.ai/mcp/")
+    url = url if url is not None else env.get("CHANS_MCP_URL", "https://api.chans.ai/mcp/")
     try:
         parsed = urlsplit(url)
         _ = parsed.port
@@ -43,18 +41,7 @@ def configuration(environ=None):
         raise ValueError(
             "CHANS_MCP_URL requires HTTPS (HTTP is allowed on loopback), without credentials, query or fragment."
         )
-    headers = {"Authorization": f"Bearer {key}"}
-    access_id = env.get("CF_ACCESS_CLIENT_ID", "").strip()
-    access_secret = env.get("CF_ACCESS_CLIENT_SECRET", "").strip()
-    if access_id or access_secret:
-        if not access_id or not access_secret:
-            raise ValueError("CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET must both be set.")
-        if any(not 33 <= ord(character) <= 126 for character in access_id + access_secret):
-            raise ValueError(
-                "CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET must be valid header values."
-            )
-        headers["CF-Access-Client-Id"] = access_id
-        headers["CF-Access-Client-Secret"] = access_secret
+    headers = request_headers(env, extra_headers)
     return url, headers
 
 
@@ -136,18 +123,33 @@ async def bridge(url, headers):
                 signal.signal(number, handler)
 
 
+class ArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        # argparse normally echoes unknown arguments, which could contain secrets.
+        self.print_usage(sys.stderr)
+        self.exit(2, "Invalid command-line arguments.\n")
+
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Chans MCP stdio bridge. Set CHANS_API_KEY; optionally CHANS_MCP_URL and CF_ACCESS_CLIENT_ID/CF_ACCESS_CLIENT_SECRET."
+    parser = ArgumentParser(
+        description="Chans MCP stdio bridge. Set CHANS_API_KEY or pass an Authorization header."
     )
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("command", nargs="?", choices=["doctor"])
+    parser.add_argument("--url", help="HTTPS MCP endpoint; overrides CHANS_MCP_URL")
+    parser.add_argument(
+        "--header",
+        action="append",
+        default=[],
+        metavar="NAME: VALUE",
+        help="HTTP header; repeat for additional headers",
+    )
     args = parser.parse_args()
     # Third-party errors may embed URLs or headers. Only our sanitized diagnostics
     # reach stderr; stdout belongs exclusively to the stdio transport.
     logging.disable(logging.CRITICAL)
     try:
-        config = configuration()
+        config = configuration(url=args.url, extra_headers=args.header)
     except ValueError as error:
         print(str(error), file=sys.stderr)
         return 1

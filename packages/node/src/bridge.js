@@ -1,37 +1,24 @@
+import { ConfigurationError, requestHeaders } from './headers.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 
-export const VERSION = '0.1.3';
+export const VERSION = '0.1.4';
 
-export function configuration(env = process.env) {
-  const key = env.CHANS_API_KEY?.trim();
-  if (!key || /[\r\n]/.test(key)) throw new Error('Set CHANS_API_KEY to a valid Chans API key.');
+export function configuration(env = process.env, options = {}) {
   let url;
-  const endpoint = env.CHANS_MCP_URL ?? 'https://api.chans.ai/mcp/';
+  const endpoint = options.url ?? env.CHANS_MCP_URL ?? 'https://api.chans.ai/mcp/';
   try {
     if (/\s/.test(endpoint)) throw new Error();
     url = new URL(endpoint);
   }
-  catch { throw new Error('CHANS_MCP_URL must be a valid endpoint URL.'); }
+  catch { throw new ConfigurationError('CHANS_MCP_URL must be a valid endpoint URL.'); }
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
   if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) ||
       url.username || url.password || url.search || url.hash) {
-    throw new Error('CHANS_MCP_URL requires HTTPS (HTTP is allowed on loopback), without credentials, query or fragment.');
+    throw new ConfigurationError('CHANS_MCP_URL requires HTTPS (HTTP is allowed on loopback), without credentials, query or fragment.');
   }
-  const headers = { Authorization: `Bearer ${key}` };
-  const accessId = env.CF_ACCESS_CLIENT_ID?.trim();
-  const accessSecret = env.CF_ACCESS_CLIENT_SECRET?.trim();
-  if (accessId || accessSecret) {
-    if (!accessId || !accessSecret) {
-      throw new Error('CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET must both be set.');
-    }
-    if (!/^[\x21-\x7e]+$/.test(accessId) || !/^[\x21-\x7e]+$/.test(accessSecret)) {
-      throw new Error('CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET must be valid header values.');
-    }
-    headers['CF-Access-Client-Id'] = accessId;
-    headers['CF-Access-Client-Secret'] = accessSecret;
-  }
+  const headers = requestHeaders(env, options.header);
   return { url, headers };
 }
 
