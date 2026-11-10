@@ -1,6 +1,6 @@
 {
   "name": "@ai-chans/mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Chans MCP stdio bridge to the hosted Streamable HTTP service",
   "type": "module",
   "bin": {

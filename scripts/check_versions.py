@@ -18,4 +18,9 @@ assert (
 tag = os.environ.get("GITHUB_REF", "")
 if tag.startswith("refs/tags/"):
     assert tag == f"refs/tags/v{version}", "Tag must match both package versions"
+readme = (root / "README.md").read_bytes()
+for package in ("node", "python"):
+    assert (root / "packages" / package / "README.md").read_bytes() == readme, (
+        "GitHub, npm and PyPI READMEs must stay identical"
+    )
 print(version)
