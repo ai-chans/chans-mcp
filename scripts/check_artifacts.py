@@ -16,8 +16,18 @@ npm = shutil.which("npm")
 uv = shutil.which("uv")
 assert npm and uv
 # Verify npm recognizes the distribution as a local tarball before publication.
+# --force applies only to this dry run, allowing checks after a version is released.
 subprocess.run(
-    [npm, "publish", str(tarball), "--dry-run", "--ignore-scripts", "--access", "public"],
+    [
+        npm,
+        "publish",
+        str(tarball),
+        "--dry-run",
+        "--ignore-scripts",
+        "--access",
+        "public",
+        "--force",
+    ],
     check=True,
 )
 with tempfile.TemporaryDirectory(prefix="chans-mcp-artifacts-") as folder:
